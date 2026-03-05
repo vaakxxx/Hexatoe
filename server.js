@@ -121,6 +121,27 @@ io.on('connection', (socket) => {
     });
   });
 
+  // Mouse position - broadcast to opponent only
+  socket.on('mousePosition', ({ gameId, x, y }) => {
+    const game = gameManager.games.get(gameId);
+    if (!game) return;
+
+    // Get the player role
+    const playerRole = gameManager.getPlayerRole(game, socket.id);
+    if (!playerRole) return;
+
+    // Send to the other player only (not the sender)
+    const opponentSocketId = playerRole === 'X' ? game.players.O?.socketId : game.players.X?.socketId;
+    if (opponentSocketId) {
+      io.to(opponentSocketId).emit('mousePosition', {
+        socketId: socket.id,
+        x: x,
+        y: y,
+        playerRole: playerRole
+      });
+    }
+  });
+
   // Get game state (for reconnection)
   socket.on('getGameState', ({ gameId }) => {
     const state = gameManager.getGameState(gameId, socket.id);

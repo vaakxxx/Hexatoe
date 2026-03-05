@@ -26,6 +26,18 @@ class HexatoeClient {
     this.players = null;
     this.playerNames = { X: '', O: '' }; // Store actual player names
 
+    // Mouse trail for visual feedback
+    this.mouseTrail = [];
+    this.maxTrailLength = 15;
+
+    // Opponent cursors with trails
+    this.opponentCursors = new Map(); // socketId -> { gridX, gridY, trail: [], color, playerRole, lastUpdate }
+    this.lastMouseEmit = 0;
+    this.mouseEmitThrottle = 30; // ms between position updates
+
+    // Animation frame for continuous rendering
+    this.animationFrameId = null;
+
     this.init();
   }
 
@@ -37,6 +49,30 @@ class HexatoeClient {
     // Set up event listeners
     this.setupEventListeners();
 
+    // Global Enter key handler - focus player name input on lobby, chat input on game screen
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+        e.preventDefault();
+
+        // Check if we're on the lobby screen
+        const lobbyScreen = document.getElementById('lobby-screen');
+        if (!lobbyScreen.classList.contains('hidden')) {
+          const playerInput = document.getElementById('player-name');
+          if (playerInput) {
+            playerInput.focus();
+          }
+        }
+        // Check if we're on the game screen
+        const gameScreen = document.getElementById('game-screen');
+        if (!gameScreen.classList.contains('hidden')) {
+          const chatInput = document.getElementById('chat-input');
+          if (chatInput) {
+            chatInput.focus();
+          }
+        }
+      }
+    });
+
     // Connect to server
     this.connectToServer();
 
@@ -46,6 +82,20 @@ class HexatoeClient {
     // Set up canvas resize handler
     window.addEventListener('resize', () => this.resizeCanvas());
     this.resizeCanvas();
+
+    // Start continuous render loop
+    this.startRenderLoop();
+  }
+
+  startRenderLoop() {
+    const loop = () => {
+      // Always render to keep trails and cursors smooth
+      if (this.gameId) {
+        this.render();
+      }
+      this.animationFrameId = requestAnimationFrame(loop);
+    };
+    this.animationFrameId = requestAnimationFrame(loop);
   }
 
   setupEventListeners() {
@@ -77,6 +127,7 @@ class HexatoeClient {
     this.canvas.addEventListener('mouseup', () => this.handleCanvasMouseUp());
     this.canvas.addEventListener('mouseleave', () => {
       this.hoveredHex = null;
+      this.mouseTrail = [];
       this.render();
     });
 
@@ -174,7 +225,11 @@ class HexatoeClient {
       this.showMessage(data.message, 'error');
     });
 
-    this.socket.on('playerLeft', () => {
+    this.socket.on('playerLeft', (data) => {
+      if (data.socketId) {
+        this.opponentCursors.delete(data.socketId);
+        this.render();
+      }
       this.addChatMessage('System', 'Your opponent has left the game.', 'system');
       this.showMessage('Opponent disconnected', 'error');
     });
@@ -190,6 +245,11 @@ class HexatoeClient {
       this.winningLine = data.winningLine;
       this.updateUI();
       this.render();
+    });
+
+    // Opponent mouse position updates
+    this.socket.on('mousePosition', (data) => {
+      this.updateOpponentCursor(data);
     });
   }
 
@@ -305,6 +365,7 @@ class HexatoeClient {
     this.board = {};
     this.winningLine = null;
     this.playerNames = { X: '', O: '' };
+    this.opponentCursors.clear();
     document.getElementById('rematch-btn').classList.add('hidden');
     this.showLobbyScreen();
   }
@@ -451,22 +512,98 @@ class HexatoeClient {
 
   handleCanvasMouseMove(e) {
     const rect = this.canvas.getBoundingClientRect();
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
+
+    // Calculate game board position (accounting for pan offset)
+    const gridX = screenX - this.canvas.width / 2 - this.offsetX;
+    const gridY = screenY - this.canvas.height / 2 - this.offsetY;
+
+    // Send mouse position to server (throttled) - only if we're in a game with both players
+    const now = Date.now();
+    if (now - this.lastMouseEmit > this.mouseEmitThrottle && this.gameId && this.players && this.players.X && this.players.O) {
+      this.lastMouseEmit = now;
+      // Send grid position (relative to game board center, accounting for pan)
+      this.socket.emit('mousePosition', {
+        gameId: this.gameId,
+        x: gridX,
+        y: gridY
+      });
+    }
+
+    // Update mouse trail
+    this.updateMouseTrail(screenX, screenY);
 
     if (this.isDragging) {
       this.offsetX += e.clientX - this.lastMousePos.x;
       this.offsetY += e.clientY - this.lastMousePos.y;
       this.lastMousePos = { x: e.clientX, y: e.clientY };
-      this.render();
     } else {
       // Convert screen coordinates to hex grid coordinates
-      const x = e.clientX - rect.left - this.canvas.width / 2 - this.offsetX;
-      const y = e.clientY - rect.top - this.canvas.height / 2 - this.offsetY;
-      const hex = this.pixelToHex(x, y);
+      const hex = this.pixelToHex(gridX, gridY);
       if (!this.hoveredHex || hex.q !== this.hoveredHex.q || hex.r !== this.hoveredHex.r) {
         this.hoveredHex = hex;
-        this.render();
       }
     }
+  }
+
+  updateMouseTrail(x, y) {
+    // Add current position to trail
+    this.mouseTrail.push({ x, y, time: Date.now() });
+
+    // Remove old trail points
+    const now = Date.now();
+    while (this.mouseTrail.length > 0 && now - this.mouseTrail[0].time > 500) {
+      this.mouseTrail.shift();
+    }
+
+    // Limit trail length
+    if (this.mouseTrail.length > this.maxTrailLength) {
+      this.mouseTrail.shift();
+    }
+  }
+
+  updateOpponentCursor(data) {
+    const { socketId, x, y, playerRole } = data;
+
+    // Don't track our own cursor (shouldn't happen since server filters, but just in case)
+    if (playerRole === this.player) return;
+
+    // x and y are grid coordinates (relative to board center)
+    // Convert to screen coordinates (applying our local pan offset)
+    const screenX = x + this.canvas.width / 2 + this.offsetX;
+    const screenY = y + this.canvas.height / 2 + this.offsetY;
+
+    // Get color based on opponent's role (X = red, O = teal)
+    const color = playerRole === 'X' ? '#e94560' : '#4ecdc4';
+
+    const cursor = this.opponentCursors.get(socketId) || {
+      trail: [],
+      playerRole: playerRole,
+      color: color
+    };
+
+    cursor.screenX = screenX;
+    cursor.screenY = screenY;
+    cursor.lastUpdate = Date.now();
+    cursor.color = color;
+    cursor.playerRole = playerRole;
+
+    // Add to trail
+    cursor.trail.push({ x: screenX, y: screenY, time: Date.now() });
+
+    // Remove old trail points
+    const now = Date.now();
+    while (cursor.trail.length > 0 && now - cursor.trail[0].time > 500) {
+      cursor.trail.shift();
+    }
+
+    // Limit trail length
+    if (cursor.trail.length > this.maxTrailLength) {
+      cursor.trail.shift();
+    }
+
+    this.opponentCursors.set(socketId, cursor);
   }
 
   handleCanvasMouseDown(e) {
@@ -496,6 +633,9 @@ class HexatoeClient {
   handleTouchMove(e) {
     e.preventDefault();
     const touch = e.touches[0];
+    // Update mouse trail for touch
+    this.updateMouseTrail(touch.clientX, touch.clientY);
+
     // Use two fingers or simulate right-click for dragging on touch
     if (e.touches.length === 2) {
       if (!this.isDragging) {
@@ -506,7 +646,6 @@ class HexatoeClient {
         this.offsetX += touch.clientX - this.lastMousePos.x;
         this.offsetY += touch.clientY - this.lastMousePos.y;
         this.lastMousePos = { x: touch.clientX, y: touch.clientY };
-        this.render();
       }
     }
   }
@@ -593,6 +732,9 @@ class HexatoeClient {
     ctx.save();
     ctx.translate(this.offsetX + canvas.width / 2, this.offsetY + canvas.height / 2);
 
+    // Draw mouse trail
+    this.drawMouseTrail();
+
     // Draw hex grid in hexagon shape
     // Iterate through all coordinates and filter by hexagon bounds
     for (let q = -this.gridRadius; q <= this.gridRadius; q++) {
@@ -611,6 +753,99 @@ class HexatoeClient {
     }
 
     ctx.restore();
+
+    // Draw opponent cursors with trails (outside the grid translation)
+    this.drawOpponentCursors();
+  }
+
+  drawMouseTrail() {
+    const ctx = this.ctx;
+
+    if (this.mouseTrail.length < 2) return;
+
+    // Get color based on player role (X = red, O = teal)
+    const color = this.player === 'X' ? '#e94560' : '#4ecdc4';
+    let r, g, b;
+    if (color === '#e94560') {
+      r = 233; g = 69; b = 96;
+    } else {
+      r = 78; g = 205; b = 196;
+    }
+
+    // Draw mouse trail as dots with fading opacity
+    for (let i = 0; i < this.mouseTrail.length; i++) {
+      const point = this.mouseTrail[i];
+      const age = Date.now() - point.time;
+      if (age > 500) continue; // Skip old points
+
+      const opacity = 1 - (age / 500); // Fade out over 500ms
+      const size = 2 + (opacity * 3); // Size varies from 2 to 5
+
+      ctx.beginPath();
+      ctx.arc(point.x - this.offsetX - this.canvas.width / 2, point.y - this.offsetY - this.canvas.height / 2, size, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${opacity * 0.8})`;
+      ctx.fill();
+    }
+  }
+
+  drawOpponentCursors() {
+    const ctx = this.ctx;
+    const now = Date.now();
+
+    // Clean up old cursors (no updates for 2 seconds)
+    for (const [socketId, cursor] of this.opponentCursors) {
+      if (now - cursor.lastUpdate > 2000) {
+        this.opponentCursors.delete(socketId);
+      }
+    }
+
+    // Draw each opponent cursor with their trail
+    for (const cursor of this.opponentCursors.values()) {
+      const color = cursor.color;
+
+      // Draw trail
+      if (cursor.trail.length >= 2) {
+        for (let i = 0; i < cursor.trail.length; i++) {
+          const point = cursor.trail[i];
+          const age = now - point.time;
+          if (age > 500) continue;
+
+          const opacity = 1 - (age / 500);
+          const size = 2 + (opacity * 3);
+
+          // Parse the color and add opacity
+          let r, g, b;
+          if (color === '#e94560') {
+            r = 233; g = 69; b = 96;
+          } else if (color === '#4ecdc4') {
+            r = 78; g = 205; b = 196;
+          } else {
+            r = 255; g = 255; b = 255;
+          }
+
+          ctx.beginPath();
+          ctx.arc(point.x, point.y, size, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${opacity * 0.8})`;
+          ctx.fill();
+        }
+      }
+
+      // Draw cursor dot
+      if (cursor.screenX !== undefined && cursor.screenY !== undefined) {
+        ctx.beginPath();
+        ctx.arc(cursor.screenX, cursor.screenY, 6, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+
+        // Only draw white border if actively moving (has trail point within last 100ms)
+        const isMoving = cursor.trail.length > 0 && (now - cursor.trail[cursor.trail.length - 1].time) < 100;
+        if (isMoving) {
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+      }
+    }
   }
 
   drawHex(x, y, q, r) {
