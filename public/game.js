@@ -6,6 +6,7 @@ class HexatoeClient {
   constructor() {
     this.socket = null;
     this.gameId = null;
+    this.lobbyName = null;
     this.player = null;
     this.playerName = '';
     this.canvas = null;
@@ -23,6 +24,7 @@ class HexatoeClient {
     this.hoveredHex = null;
     this.winningLine = null;
     this.players = null;
+    this.playerNames = { X: '', O: '' }; // Store actual player names
 
     this.init();
   }
@@ -50,13 +52,26 @@ class HexatoeClient {
     // Lobby
     document.getElementById('create-game-btn').addEventListener('click', () => this.createGame());
     document.getElementById('refresh-lobby-btn').addEventListener('click', () => this.loadGamesList());
+    document.getElementById('rematch-btn').addEventListener('click', () => this.requestRematch());
 
     // Game
     document.getElementById('leave-game-btn').addEventListener('click', () => this.leaveGame());
     document.getElementById('modal-close-btn').addEventListener('click', () => this.closeModal());
 
-    // Canvas interactions
+    // Chat
+    document.getElementById('chat-send-btn').addEventListener('click', () => this.sendChatMessage());
+    document.getElementById('chat-input').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        this.sendChatMessage();
+      }
+    });
+
+    // Canvas interactions - RIGHT click to drag, LEFT click to place
     this.canvas.addEventListener('click', (e) => this.handleCanvasClick(e));
+    this.canvas.addEventListener('contextmenu', (e) => {
+      e.preventDefault(); // Prevent context menu
+      return false;
+    });
     this.canvas.addEventListener('mousemove', (e) => this.handleCanvasMouseMove(e));
     this.canvas.addEventListener('mousedown', (e) => this.handleCanvasMouseDown(e));
     this.canvas.addEventListener('mouseup', () => this.handleCanvasMouseUp());
@@ -84,21 +99,28 @@ class HexatoeClient {
 
     this.socket.on('gameCreated', (data) => {
       this.gameId = data.gameId;
+      this.lobbyName = data.lobbyName;
       this.player = data.player;
       this.playerName = data.playerName;
+      this.playerNames[this.player] = data.playerName;
       this.showGameScreen();
       this.showMessage('Waiting for opponent...', 'success');
     });
 
     this.socket.on('gameJoined', (data) => {
       this.gameId = data.gameId;
+      this.lobbyName = data.lobbyName;
       this.player = data.player;
       this.playerName = data.playerName;
+      this.playerNames[this.player] = data.playerName;
       this.showGameScreen();
     });
 
     this.socket.on('gameStart', (data) => {
       this.players = data.players;
+      // Store player names
+      this.playerNames.X = data.players.X?.name || 'Player X';
+      this.playerNames.O = data.players.O?.name || 'Player O';
       this.showMessage('Game started!', 'success');
       this.updateUI();
       // Ensure canvas is properly sized before rendering
@@ -121,8 +143,27 @@ class HexatoeClient {
       this.render();
       this.showModal(
         'Game Over!',
-        `${data.winner === this.player ? 'You win!' : data.winner + ' wins!'}`
+        `${this.playerNames[data.winner] || data.winner} wins!`
       );
+      // Show rematch button
+      document.getElementById('rematch-btn').classList.remove('hidden');
+    });
+
+    this.socket.on('rematchAccepted', (data) => {
+      this.board = {};
+      this.currentPlayer = data.currentPlayer;
+      this.movesRemaining = data.movesRemaining;
+      this.winningLine = null;
+      this.player = data.newRole; // Role is flipped in rematch!
+      this.playerNames.X = data.players.X.name;
+      this.playerNames.O = data.players.O.name;
+      this.players = data.players;
+
+      document.getElementById('rematch-btn').classList.add('hidden');
+      this.showMessage('Rematch! Roles have been flipped!', 'success');
+      this.updateUI();
+      this.render();
+      this.addChatMessage('System', 'Rematch started! Roles have been flipped.', 'system');
     });
 
     this.socket.on('moveError', (data) => {
@@ -134,7 +175,12 @@ class HexatoeClient {
     });
 
     this.socket.on('playerLeft', () => {
+      this.addChatMessage('System', 'Your opponent has left the game.', 'system');
       this.showMessage('Opponent disconnected', 'error');
+    });
+
+    this.socket.on('chatMessage', (data) => {
+      this.addChatMessage(data.sender, data.message);
     });
 
     this.socket.on('gameState', (data) => {
@@ -171,9 +217,14 @@ class HexatoeClient {
     games.forEach(game => {
       const gameItem = document.createElement('div');
       gameItem.className = 'game-item';
+
+      // Display lobby name if available, otherwise show host name
+      const displayName = game.lobbyName || `${game.hostName}'s game`;
+
       gameItem.innerHTML = `
         <div class="game-item-info">
-          <div class="game-item-host">${game.hostName}'s game</div>
+          ${game.lobbyName ? `<div class="game-item-lobby-name">${this.escapeHtml(game.lobbyName)}</div>` : ''}
+          <div class="game-item-host">Host: ${this.escapeHtml(game.hostName)}</div>
           <div class="game-item-id">ID: ${game.id.slice(-8)}</div>
         </div>
         <button class="btn primary join-btn" data-game-id="${game.id}">Join</button>
@@ -194,13 +245,20 @@ class HexatoeClient {
     return name;
   }
 
+  getLobbyName() {
+    const lobbyInput = document.getElementById('lobby-name');
+    const lobbyName = lobbyInput.value.trim();
+    return lobbyName || null; // Return null if empty, server will use default
+  }
+
   createGame() {
     const name = this.getPlayerName();
     if (!name) {
       this.showMessage('Please enter your name', 'error');
       return;
     }
-    this.socket.emit('createGame', name);
+    const lobbyName = this.getLobbyName();
+    this.socket.emit('createGame', { playerName: name, lobbyName });
   }
 
   joinGame(gameId) {
@@ -212,11 +270,18 @@ class HexatoeClient {
     this.socket.emit('joinGame', { gameId, playerName: name });
   }
 
+  requestRematch() {
+    if (!this.gameId) return;
+    this.socket.emit('requestRematch', { gameId: this.gameId });
+    document.getElementById('rematch-btn').classList.add('hidden');
+    this.showMessage('Rematch requested!', 'success');
+  }
+
   // Game methods
   showGameScreen() {
     document.getElementById('lobby-screen').classList.add('hidden');
     document.getElementById('game-screen').classList.remove('hidden');
-    document.getElementById('game-id').textContent = `Game: ${this.gameId.slice(-8)}`;
+    document.getElementById('lobby-title').textContent = this.lobbyName || `Game: ${this.gameId.slice(-8)}`;
     // Wait for layout reflow before resizing canvas
     requestAnimationFrame(() => {
       this.resizeCanvas();
@@ -235,9 +300,12 @@ class HexatoeClient {
       this.socket.emit('leaveGame', { gameId: this.gameId });
     }
     this.gameId = null;
+    this.lobbyName = null;
     this.player = null;
     this.board = {};
     this.winningLine = null;
+    this.playerNames = { X: '', O: '' };
+    document.getElementById('rematch-btn').classList.add('hidden');
     this.showLobbyScreen();
   }
 
@@ -246,22 +314,25 @@ class HexatoeClient {
     const movesBadge = document.getElementById('moves-remaining');
     const playersInfo = document.getElementById('players-info');
 
-    // Update turn indicator
+    // Update turn indicator with player name
+    const currentPlayerName = this.playerNames[this.currentPlayer] || this.currentPlayer;
     if (this.currentPlayer === this.player) {
-      turnText.textContent = 'Your turn!';
+      turnText.textContent = `Your turn! (${currentPlayerName})`;
       turnText.style.color = '#4ecdc4';
     } else {
-      turnText.textContent = `${this.currentPlayer}'s turn`;
+      turnText.textContent = `${currentPlayerName}'s turn`;
       turnText.style.color = '#a0a0a0';
     }
 
     movesBadge.textContent = `${this.movesRemaining} move${this.movesRemaining !== 1 ? 's' : ''} left`;
 
-    // Update players info
+    // Update players info with names
     if (this.players) {
+      const xName = this.playerNames.X || 'Player X';
+      const oName = this.playerNames.O || 'Player O';
       playersInfo.innerHTML = `
-        <span class="player-badge ${this.player === 'X' ? 'x' : 'o'}">You: ${this.player}</span>
-        <span class="player-badge ${this.player === 'X' ? 'o' : 'x'}">Opponent: ${this.player === 'X' ? 'O' : 'X'}</span>
+        <span class="player-badge ${this.player === 'X' ? 'x' : 'o'}">You: ${this.player} (${this.playerName})</span>
+        <span class="player-badge ${this.player === 'X' ? 'o' : 'x'}">Opponent: ${this.player === 'X' ? 'O' : 'X'} (${this.player === 'X' ? oName : xName})</span>
       `;
     }
   }
@@ -284,6 +355,43 @@ class HexatoeClient {
 
   closeModal() {
     document.getElementById('modal').classList.add('hidden');
+  }
+
+  // Chat methods
+  sendChatMessage() {
+    const input = document.getElementById('chat-input');
+    const message = input.value.trim();
+
+    if (!message) return;
+
+    this.socket.emit('chatMessage', {
+      gameId: this.gameId,
+      message: message
+    });
+
+    input.value = '';
+  }
+
+  addChatMessage(sender, message, type = 'normal') {
+    const messagesContainer = document.getElementById('chat-messages');
+    const messageEl = document.createElement('div');
+
+    if (type === 'system') {
+      messageEl.className = 'chat-message system';
+      messageEl.textContent = message;
+    } else {
+      messageEl.className = 'chat-message';
+      messageEl.innerHTML = `<span class="sender">${sender}:</span><span class="text">${this.escapeHtml(message)}</span>`;
+    }
+
+    messagesContainer.appendChild(messageEl);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+  }
+
+  escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
   }
 
   // Canvas methods
@@ -310,6 +418,7 @@ class HexatoeClient {
 
   handleCanvasClick(e) {
     if (this.currentPlayer !== this.player) return;
+    if (e.button !== 0) return; // Only left click (button 0) places pieces
 
     const rect = this.canvas.getBoundingClientRect();
     // Convert screen coordinates to hex grid coordinates
@@ -361,55 +470,50 @@ class HexatoeClient {
   }
 
   handleCanvasMouseDown(e) {
-    this.isDragging = true;
-    this.lastMousePos = { x: e.clientX, y: e.clientY };
-    this.canvas.style.cursor = 'grabbing';
+    // Only right click (button 2) starts dragging
+    if (e.button === 2) {
+      this.isDragging = true;
+      this.lastMousePos = { x: e.clientX, y: e.clientY };
+      this.canvas.style.cursor = 'grabbing';
+      e.preventDefault();
+    }
   }
 
   handleCanvasMouseUp() {
-    this.isDragging = false;
-    this.canvas.style.cursor = 'crosshair';
+    if (this.isDragging) {
+      this.isDragging = false;
+      this.canvas.style.cursor = 'crosshair';
+    }
   }
 
   handleTouchStart(e) {
     e.preventDefault();
     const touch = e.touches[0];
-    this.handleCanvasMouseDown({ clientX: touch.clientX, clientY: touch.clientY });
+    // Treat touch as left click for placing pieces
+    this.handleCanvasClick({ clientX: touch.clientX, clientY: touch.clientY, button: 0 });
   }
 
   handleTouchMove(e) {
     e.preventDefault();
     const touch = e.touches[0];
-    this.handleCanvasMouseMove({ clientX: touch.clientX, clientY: touch.clientY });
+    // Use two fingers or simulate right-click for dragging on touch
+    if (e.touches.length === 2) {
+      if (!this.isDragging) {
+        this.isDragging = true;
+        this.lastMousePos = { x: touch.clientX, y: touch.clientY };
+        this.canvas.style.cursor = 'grabbing';
+      } else {
+        this.offsetX += touch.clientX - this.lastMousePos.x;
+        this.offsetY += touch.clientY - this.lastMousePos.y;
+        this.lastMousePos = { x: touch.clientX, y: touch.clientY };
+        this.render();
+      }
+    }
   }
 
   handleTouchEnd(e) {
     e.preventDefault();
-    if (!this.isDragging) return;
-
-    const touch = e.changedTouches[0];
-    const rect = this.canvas.getBoundingClientRect();
-    const x = touch.clientX - rect.left - this.canvas.width / 2 - this.offsetX;
-    const y = touch.clientY - rect.top - this.canvas.height / 2 - this.offsetY;
-
     this.handleCanvasMouseUp();
-
-    // Check if this was a tap (not a drag)
-    const hex = this.pixelToHex(x, y);
-    const key = hex.q + ',' + hex.r;
-
-    // Check bounds
-    if (!this.isHexInBounds(hex.q, hex.r)) {
-      return;
-    }
-
-    if (this.currentPlayer === this.player && !this.board[key]) {
-      this.socket.emit('makeMove', {
-        gameId: this.gameId,
-        q: hex.q,
-        r: hex.r
-      });
-    }
   }
 
   // Hex math methods

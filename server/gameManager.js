@@ -16,10 +16,11 @@ export class GameManager {
   /**
    * Create a new game
    */
-  createGame(socketId, playerName) {
+  createGame(socketId, playerName, lobbyName = null) {
     const gameId = this.generateGameId();
     const game = {
       id: gameId,
+      lobbyName: lobbyName || null,
       logic: new GameLogic(),
       players: {
         X: { socketId, name: playerName, connected: true },
@@ -99,11 +100,69 @@ export class GameManager {
   }
 
   /**
+   * Request a rematch - flips the roles so O becomes X and goes first
+   */
+  requestRematch(gameId, socketId) {
+    const game = this.games.get(gameId);
+
+    if (!game) {
+      return { success: false, error: 'Game not found' };
+    }
+
+    // Only allow rematch if game is finished
+    if (game.status !== 'finished') {
+      return { success: false, error: 'Game is not finished yet' };
+    }
+
+    // Determine which player is requesting
+    const player = this.getPlayerRole(game, socketId);
+
+    if (!player) {
+      return { success: false, error: 'You are not in this game' };
+    }
+
+    // Reset the game logic
+    game.logic = new GameLogic();
+
+    // Swap the players: X becomes O, O becomes X
+    const oldX = game.players.X;
+    const oldO = game.players.O;
+
+    game.players.X = oldO; // O goes first now!
+    game.players.O = oldX;
+
+    game.status = 'playing';
+
+    // Return new role for the requesting player
+    const newRole = (player === 'X') ? 'O' : 'X';
+
+    return {
+      success: true,
+      game,
+      currentPlayer: game.logic.currentPlayer, // Should be 'X' (the former O)
+      movesRemaining: game.logic.movesRemaining,
+      newRole
+    };
+  }
+
+  /**
    * Get the role (X or O) of a player in a game
    */
   getPlayerRole(game, socketId) {
     if (game.players.X?.socketId === socketId) return 'X';
     if (game.players.O?.socketId === socketId) return 'O';
+    return null;
+  }
+
+  /**
+   * Get the name of a player
+   */
+  getPlayerName(gameId, socketId) {
+    const game = this.games.get(gameId);
+    if (!game) return null;
+
+    if (game.players.X?.socketId === socketId) return game.players.X.name;
+    if (game.players.O?.socketId === socketId) return game.players.O.name;
     return null;
   }
 
@@ -147,6 +206,7 @@ export class GameManager {
         games.push({
           id: game.id,
           hostName: game.players.X.name,
+          lobbyName: game.lobbyName,
           createdAt: game.createdAt
         });
       }

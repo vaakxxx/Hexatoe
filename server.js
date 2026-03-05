@@ -23,11 +23,16 @@ io.on('connection', (socket) => {
   console.log(`Client connected: ${socket.id}`);
 
   // Create a new game
-  socket.on('createGame', (playerName) => {
-    const game = gameManager.createGame(socket.id, playerName);
+  socket.on('createGame', ({ playerName, lobbyName }) => {
+    const game = gameManager.createGame(socket.id, playerName, lobbyName);
     socket.join(game.id);
-    socket.emit('gameCreated', { gameId: game.id, player: 'X', playerName });
-    console.log(`Game created: ${game.id} by ${playerName}`);
+    socket.emit('gameCreated', {
+      gameId: game.id,
+      player: 'X',
+      playerName,
+      lobbyName: game.lobbyName
+    });
+    console.log(`Game created: ${game.id} by ${playerName} (lobby: ${game.lobbyName})`);
   });
 
   // Join an existing game
@@ -36,12 +41,18 @@ io.on('connection', (socket) => {
 
     if (result.success) {
       socket.join(gameId);
-      socket.emit('gameJoined', { gameId, player: 'O', playerName });
+      socket.emit('gameJoined', {
+        gameId,
+        player: 'O',
+        playerName,
+        lobbyName: result.game.lobbyName
+      });
 
       // Notify both players that game is starting
       io.to(gameId).emit('gameStart', {
         gameId,
-        players: result.game.players
+        players: result.game.players,
+        lobbyName: result.game.lobbyName
       });
       console.log(`${playerName} joined game: ${gameId}`);
     } else {
@@ -75,6 +86,39 @@ io.on('connection', (socket) => {
     } else {
       socket.emit('moveError', { message: result.error });
     }
+  });
+
+  // Request rematch
+  socket.on('requestRematch', ({ gameId }) => {
+    const result = gameManager.requestRematch(gameId, socket.id);
+
+    if (result.success) {
+      // Notify both players that rematch is starting
+      io.to(gameId).emit('rematchAccepted', {
+        currentPlayer: result.currentPlayer,
+        movesRemaining: result.movesRemaining,
+        players: result.game.players,
+        newRole: result.newRole
+      });
+      console.log(`Rematch started for game: ${gameId}`);
+    } else {
+      socket.emit('moveError', { message: result.error });
+    }
+  });
+
+  // Chat message
+  socket.on('chatMessage', ({ gameId, message }) => {
+    const game = gameManager.games.get(gameId);
+    if (!game) return;
+
+    const senderName = gameManager.getPlayerName(gameId, socket.id);
+    if (!senderName) return;
+
+    // Broadcast chat message to both players
+    io.to(gameId).emit('chatMessage', {
+      sender: senderName,
+      message: message
+    });
   });
 
   // Get game state (for reconnection)
