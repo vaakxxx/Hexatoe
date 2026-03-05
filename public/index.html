@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hexatoe - Hexagonal Tic-Tac-Toe</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Lobby Screen -->
+        <div id="lobby-screen" class="screen">
+            <div class="container">
+                <h1>⬡ Hexatoe</h1>
+                <p class="subtitle">Hexagonal Tic-Tac-Toe</p>
+
+                <div class="name-input">
+                    <input type="text" id="player-name" placeholder="Enter your name" maxlength="20">
+                </div>
+
+                <div class="lobby-buttons">
+                    <button id="create-game-btn" class="btn primary">Create New Game</button>
+                    <button id="refresh-lobby-btn" class="btn secondary">Refresh Games</button>
+                </div>
+
+                <div id="games-list" class="games-list">
+                    <h2>Available Games</h2>
+                    <div id="games-container"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Game Screen -->
+        <div id="game-screen" class="screen hidden">
+            <div class="game-header">
+                <div class="game-info">
+                    <h2 id="game-id">Game: loading...</h2>
+                    <div id="players-info"></div>
+                </div>
+                <div class="turn-indicator">
+                    <span id="turn-text">Your turn!</span>
+                    <span id="moves-remaining" class="moves-badge"></span>
+                </div>
+            </div>
+
+            <div class="game-container">
+                <canvas id="game-canvas"></canvas>
+            </div>
+
+            <div class="game-controls">
+                <button id="leave-game-btn" class="btn secondary">Leave Game</button>
+                <div id="game-message" class="message"></div>
+            </div>
+        </div>
+
+        <!-- Modal for game over -->
+        <div id="modal" class="modal hidden">
+            <div class="modal-content">
+                <h2 id="modal-title">Game Over</h2>
+                <p id="modal-message"></p>
+                <button id="modal-close-btn" class="btn primary">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="game.js"></script>
+</body>
+</html>

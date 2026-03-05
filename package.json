@@ -1,0 +1,15 @@
+{
+  "name": "hexatoe",
+  "version": "1.0.0",
+  "description": "Hexagonal tic-tac-toe on an infinite hex grid",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.6.1"
+  }
+}
