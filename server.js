@@ -5,7 +5,13 @@ import { GameManager } from './server/gameManager.js';
 
 const app = express();
 const httpServer = createServer(app);
-const io = new Server(httpServer);
+const io = new Server(httpServer, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"],
+    credentials: true
+  }
+});
 
 const gameManager = new GameManager();
 
