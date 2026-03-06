@@ -9,6 +9,8 @@ export class LobbyManager {
     this.socket = socketClient;
     this.state = gameState;
     this.STORAGE_KEY = 'hexatoe_player_name';
+    this.games = [];
+    this.timerInterval = null;
   }
 
   /**
@@ -50,6 +52,10 @@ export class LobbyManager {
     const container = DomHelpers.getElement('games-container');
     if (!container) return;
 
+    // Store games and start/refresh timer
+    this.games = games;
+    this.startTimer();
+
     DomHelpers.clear('games-container');
 
     if (games.length === 0) {
@@ -68,6 +74,7 @@ export class LobbyManager {
           ${game.lobbyName ? `<div class="game-item-lobby-name">${DomHelpers.escapeHtml(game.lobbyName)}</div>` : ''}
           <div class="game-item-host">Host: ${DomHelpers.escapeHtml(game.hostName)}</div>
           <div class="game-item-id">ID: ${game.id.slice(-8)}</div>
+          <div class="game-item-timer" data-created-at="${game.createdAt}"><span class="timer-text">loading...</span></div>
         </div>
         <button class="btn primary join-btn" data-game-id="${game.id}">Join</button>
       `;
@@ -78,6 +85,68 @@ export class LobbyManager {
     container.querySelectorAll('.join-btn').forEach(btn => {
       btn.addEventListener('click', () => this.joinGame(btn.dataset.gameId));
     });
+
+    // Initial timer update
+    this.updateTimers();
+  }
+
+  /**
+   * Start the timer interval
+   */
+  startTimer() {
+    // Clear existing interval if any
+    if (this.timerInterval) {
+      clearInterval(this.timerInterval);
+    }
+
+    // Update timers every second
+    this.timerInterval = setInterval(() => this.updateTimers(), 1000);
+  }
+
+  /**
+   * Stop the timer interval
+   */
+  stopTimer() {
+    if (this.timerInterval) {
+      clearInterval(this.timerInterval);
+      this.timerInterval = null;
+    }
+  }
+
+  /**
+   * Update all timer displays
+   */
+  updateTimers() {
+    const timerElements = document.querySelectorAll('.game-item-timer');
+    timerElements.forEach(element => {
+      const createdAt = parseInt(element.dataset.createdAt);
+      if (createdAt) {
+        const elapsed = Date.now() - createdAt;
+        const timerText = element.querySelector('.timer-text');
+        if (timerText) {
+          timerText.textContent = this.formatElapsedTime(elapsed);
+        }
+      }
+    });
+  }
+
+  /**
+   * Format elapsed time in a human-readable way
+   */
+  formatElapsedTime(ms) {
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+
+    if (hours > 0) {
+      const mins = minutes % 60;
+      return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+    } else if (minutes > 0) {
+      const secs = seconds % 60;
+      return secs > 0 ? `${minutes}m ${secs}s` : `${minutes}m`;
+    } else {
+      return `${seconds}s`;
+    }
   }
 
   /**

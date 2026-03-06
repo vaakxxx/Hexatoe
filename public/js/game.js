@@ -115,10 +115,12 @@ class HexatoeClient {
     });
 
     this.socket.on('gameCreated', (data) => {
+      console.log('gameCreated event:', data); // Debug log
       this.state.setGameInfo({
         ...data,
         socketId: this.socket.getSocketId()
       });
+      console.log('Game start time set to:', this.state.gameStartTime); // Debug log
       this.ui.updateLobbyTitle();
       this.ui.showGameScreen();
       this.ui.showMessage('Waiting for opponent...', 'success');
@@ -126,17 +128,25 @@ class HexatoeClient {
     });
 
     this.socket.on('gameJoined', (data) => {
+      console.log('gameJoined event:', data); // Debug log
       this.state.setGameInfo({
         ...data,
         socketId: this.socket.getSocketId()
       });
+      console.log('Game start time set to:', this.state.gameStartTime); // Debug log
       this.ui.updateLobbyTitle();
       this.ui.showGameScreen();
       this.handleResize();
     });
 
     this.socket.on('gameStart', (data) => {
+      console.log('gameStart event:', data); // Debug log
       this.state.setPlayers(data.players);
+      // Ensure game start time is set (fallback for second player)
+      if (!this.state.gameStartTime) {
+        this.state.gameStartTime = data.createdAt || Date.now();
+        console.log('Game start time fallback set to:', this.state.gameStartTime); // Debug log
+      }
       this.ui.showMessage('Game started!', 'success');
       this.ui.updateUI();
       this.handleResize();

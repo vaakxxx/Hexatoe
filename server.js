@@ -30,7 +30,8 @@ io.on('connection', (socket) => {
       gameId: game.id,
       player: 'X',
       playerName,
-      lobbyName: game.lobbyName
+      lobbyName: game.lobbyName,
+      createdAt: game.createdAt
     });
     console.log(`Game created: ${game.id} by ${playerName} (lobby: ${game.lobbyName})`);
   });
@@ -45,14 +46,16 @@ io.on('connection', (socket) => {
         gameId,
         player: 'O',
         playerName,
-        lobbyName: result.game.lobbyName
+        lobbyName: result.game.lobbyName,
+        createdAt: result.game.createdAt
       });
 
       // Notify both players that game is starting
       io.to(gameId).emit('gameStart', {
         gameId,
         players: result.game.players,
-        lobbyName: result.game.lobbyName
+        lobbyName: result.game.lobbyName,
+        createdAt: result.game.createdAt
       });
       console.log(`${playerName} joined game: ${gameId}`);
     } else {

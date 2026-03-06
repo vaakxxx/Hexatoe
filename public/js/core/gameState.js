@@ -24,6 +24,7 @@ export class GameState {
     this.winningLine = null;
     this.gridRadius = 20;
     this.hexSize = 30;
+    this.gameStartTime = null;
   }
 
   /**
@@ -37,6 +38,11 @@ export class GameState {
     this.socketId = data.socketId;
     if (data.playerName) {
       this.playerNames[this.player] = data.playerName;
+    }
+    // Set game start time when joining or creating (use server's timestamp)
+    // Fallback to client time if server timestamp is not available
+    if (!this.gameStartTime) {
+      this.gameStartTime = data.createdAt || Date.now();
     }
   }
 
@@ -126,5 +132,6 @@ export class GameState {
     this.playerNames.O = data.players.O?.name || 'Player O';
     this.playerName = data.players[this.player]?.name || '';
     this.players = data.players;
+    // Keep the game start time for rematch to show total session time
   }
 }

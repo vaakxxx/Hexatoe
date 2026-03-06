@@ -8,6 +8,7 @@ export class UIManager {
   constructor(gameState) {
     this.state = gameState;
     this.messageTimeout = null;
+    this.timerInterval = null;
   }
 
   /**
@@ -104,12 +105,14 @@ export class UIManager {
   showGameScreen() {
     DomHelpers.hideElement('lobby-screen');
     DomHelpers.showElement('game-screen');
+    this.startGameTimer();
   }
 
   /**
    * Show lobby screen
    */
   showLobbyScreen() {
+    this.stopGameTimer();
     DomHelpers.hideElement('game-screen');
     DomHelpers.showElement('lobby-screen');
   }
@@ -136,6 +139,59 @@ export class UIManager {
    */
   hideRematchButton() {
     DomHelpers.hideElement('rematch-btn');
+  }
+
+  /**
+   * Start the game timer
+   */
+  startGameTimer() {
+    // Clear existing interval if any
+    this.stopGameTimer();
+
+    // Update timer every second
+    this.timerInterval = setInterval(() => this.updateGameTimer(), 1000);
+
+    // Initial update
+    this.updateGameTimer();
+  }
+
+  /**
+   * Stop the game timer
+   */
+  stopGameTimer() {
+    if (this.timerInterval) {
+      clearInterval(this.timerInterval);
+      this.timerInterval = null;
+    }
+  }
+
+  /**
+   * Update the game timer display
+   */
+  updateGameTimer() {
+    const timerElement = DomHelpers.getElement('game-timer');
+    if (!timerElement || !this.state.gameStartTime) return;
+
+    const elapsed = Date.now() - this.state.gameStartTime;
+    timerElement.textContent = this.formatTime(elapsed);
+  }
+
+  /**
+   * Format time in MM:SS or HH:MM:SS format
+   */
+  formatTime(ms) {
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+
+    const secs = seconds % 60;
+    const mins = minutes % 60;
+
+    if (hours > 0) {
+      return `${hours}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    } else {
+      return `${mins}:${secs.toString().padStart(2, '0')}`;
+    }
   }
 
   /**
