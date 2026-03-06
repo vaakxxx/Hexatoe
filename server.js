@@ -97,8 +97,7 @@ io.on('connection', (socket) => {
       io.to(gameId).emit('rematchAccepted', {
         currentPlayer: result.currentPlayer,
         movesRemaining: result.movesRemaining,
-        players: result.game.players,
-        newRole: result.newRole
+        players: result.game.players
       });
       console.log(`Rematch started for game: ${gameId}`);
     } else {

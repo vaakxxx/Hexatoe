@@ -133,15 +133,11 @@ export class GameManager {
 
     game.status = 'playing';
 
-    // Return new role for the requesting player
-    const newRole = (player === 'X') ? 'O' : 'X';
-
     return {
       success: true,
       game,
       currentPlayer: game.logic.currentPlayer, // Should be 'X' (the former O)
-      movesRemaining: game.logic.movesRemaining,
-      newRole
+      movesRemaining: game.logic.movesRemaining
     };
   }
 

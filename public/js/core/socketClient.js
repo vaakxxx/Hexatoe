@@ -134,4 +134,11 @@ export class SocketClient {
   getGameState(gameId) {
     this.socket.emit('getGameState', { gameId });
   }
+
+  /**
+   * Get the socket id
+   */
+  getSocketId() {
+    return this.socket?.id;
+  }
 }

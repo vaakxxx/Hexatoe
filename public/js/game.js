@@ -115,7 +115,10 @@ class HexatoeClient {
     });
 
     this.socket.on('gameCreated', (data) => {
-      this.state.setGameInfo(data);
+      this.state.setGameInfo({
+        ...data,
+        socketId: this.socket.getSocketId()
+      });
       this.ui.updateLobbyTitle();
       this.ui.showGameScreen();
       this.ui.showMessage('Waiting for opponent...', 'success');
@@ -123,7 +126,10 @@ class HexatoeClient {
     });
 
     this.socket.on('gameJoined', (data) => {
-      this.state.setGameInfo(data);
+      this.state.setGameInfo({
+        ...data,
+        socketId: this.socket.getSocketId()
+      });
       this.ui.updateLobbyTitle();
       this.ui.showGameScreen();
       this.handleResize();

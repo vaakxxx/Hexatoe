@@ -15,6 +15,7 @@ export class GameState {
     this.lobbyName = null;
     this.player = null;
     this.playerName = '';
+    this.socketId = null;
     this.board = {};
     this.currentPlayer = 'X';
     this.movesRemaining = 1;
@@ -33,6 +34,7 @@ export class GameState {
     this.lobbyName = data.lobbyName;
     this.player = data.player;
     this.playerName = data.playerName;
+    this.socketId = data.socketId;
     if (data.playerName) {
       this.playerNames[this.player] = data.playerName;
     }
@@ -112,9 +114,17 @@ export class GameState {
     this.currentPlayer = data.currentPlayer;
     this.movesRemaining = data.movesRemaining;
     this.winningLine = null;
-    this.player = data.newRole;
-    this.playerNames.X = data.players.X.name;
-    this.playerNames.O = data.players.O.name;
+
+    // Determine player's role by checking which role has their socketId
+    if (data.players.X?.socketId === this.socketId) {
+      this.player = 'X';
+    } else if (data.players.O?.socketId === this.socketId) {
+      this.player = 'O';
+    }
+
+    this.playerNames.X = data.players.X?.name || 'Player X';
+    this.playerNames.O = data.players.O?.name || 'Player O';
+    this.playerName = data.players[this.player]?.name || '';
     this.players = data.players;
   }
 }
